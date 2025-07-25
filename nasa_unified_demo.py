@@ -30,7 +30,8 @@ class NASAUnifiedPortfolio:
     async def run_deep_research(self, query: str):
         """Deep Research Agent - Simplified for unified interface"""
         if not query.strip():
-            return "Please enter a research query."
+            yield "Please enter a research query."
+            return
         
         yield f"🚀 **NASA Deep Research Agent Activated**\n\n"
         yield f"**Research Query:** {query}\n\n"
@@ -77,7 +78,8 @@ class NASAUnifiedPortfolio:
     async def run_engineering_team(self, project_description: str):
         """Engineering Team Agent - Simplified for unified interface"""
         if not project_description.strip():
-            return "Please enter a project description."
+            yield "Please enter a project description."
+            return
         
         yield f"🚀 **NASA Engineering Team Design Session**\n\n"
         yield f"**Project:** {project_description}\n\n"
@@ -122,7 +124,8 @@ class NASAUnifiedPortfolio:
     async def run_mission_control(self, scenario: str, mission_phase: str):
         """Mission Control Agent - Simplified for unified interface"""
         if not scenario.strip():
-            return "Please enter a mission control scenario."
+            yield "Please enter a mission control scenario."
+            return
         
         yield f"🚀 **NASA Mission Control Response**\n\n"
         yield f"**Mission Phase:** {mission_phase.replace('_', ' ').title()}\n"
@@ -167,7 +170,8 @@ class NASAUnifiedPortfolio:
     async def run_spacecraft_autonomy(self, situation: str, mission_scenario: str):
         """Spacecraft Autonomy Agent - Simplified for unified interface"""
         if not situation.strip():
-            return "Please enter an autonomous situation."
+            yield "Please enter an autonomous situation."
+            return
         
         yield f"🤖 **NASA Spacecraft Autonomy System**\n\n"
         yield f"**Mission Scenario:** {mission_scenario.replace('_', ' ').title()}\n"
@@ -219,7 +223,8 @@ class NASAUnifiedPortfolio:
     async def run_satellite_traffic(self, scenario: str, orbital_zone: str):
         """Satellite Traffic Management Agent - Simplified for unified interface"""
         if not scenario.strip():
-            return "Please enter a traffic management scenario."
+            yield "Please enter a traffic management scenario."
+            return
         
         yield f"🛰️ **NASA Satellite Traffic Management**\n\n"
         yield f"**Orbital Zone:** {orbital_zone} \n"
@@ -276,7 +281,8 @@ class NASAUnifiedPortfolio:
     async def run_planetary_exploration(self, planetary_body: str, region: str, objectives: str):
         """Planetary Exploration Agent - Simplified for unified interface"""
         if not region.strip():
-            return "Please enter a target region."
+            yield "Please enter a target region."
+            return
         
         yield f"🌍 **NASA Planetary Exploration Mission**\n\n"
         yield f"**Target:** {planetary_body.title()}\n"
