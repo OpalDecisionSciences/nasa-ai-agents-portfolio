@@ -146,7 +146,10 @@ This portfolio demonstrates six sophisticated AI agent systems designed for NASA
 
 1. **Clone and setup:**
 ```bash
-cd /Users/iamai/projects/custom_agents
+git clone https://github.com/OpalDecisionSciences/nasa-ai-agents-portfolio.git
+cd nasa-ai-agents-portfolio
+python -m venv .nasa
+source .nasa/bin/activate  # On Windows: .nasa\Scripts\activate
 pip install -r requirements.txt
 ```
 
@@ -156,8 +159,17 @@ cp .env.example .env
 # Edit .env and add your OPENAI_API_KEY
 ```
 
-3. **Launch demo:**
+3. **Launch unified demo:**
 ```bash
+source .nasa/bin/activate  # On Windows: .nasa\Scripts\activate
+python nasa_unified_demo.py
+```
+
+**Access:** http://localhost:7860
+
+### Alternative: Launch all agents separately
+```bash
+source .nasa/bin/activate  # On Windows: .nasa\Scripts\activate
 python demo_launcher.py
 ```
 

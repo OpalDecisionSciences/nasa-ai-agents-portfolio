@@ -9,6 +9,8 @@ import openai
 import json
 import random
 import math
+import os
+import time
 from typing import Dict, List, Tuple, Any, Optional
 from datetime import datetime, timedelta
 from pydantic import BaseModel, Field
@@ -24,316 +26,406 @@ class NASAUnifiedPortfolio:
     """Unified NASA AI Agents Portfolio"""
     
     def __init__(self):
-        self.client = openai.AsyncOpenAI()
+        # Ensure environment variables are loaded
+        load_dotenv()
+        
+        # Configure OpenAI client with better settings
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY environment variable is required")
+        
+        # Check for organization ID
+        org_id = os.getenv("OPENAI_ORG_ID")
+        
+        # Initialize client with proper configuration
+        client_kwargs = {
+            "api_key": api_key,
+            "timeout": 60.0,  # 60 second timeout
+            "max_retries": 3   # Built-in retry logic
+        }
+        
+        if org_id:
+            client_kwargs["organization"] = org_id
+            
+        self.client = openai.AsyncOpenAI(**client_kwargs)
+        self.model = os.getenv("OPENAI_MODEL", "gpt-4o")
+        self.last_request_time = 0
+        self.min_request_interval = 3.0  # Increased to 3 seconds between requests
+    
+    async def rate_limit(self):
+        """Rate limiting to prevent API overload"""
+        current_time = time.time()
+        time_since_last = current_time - self.last_request_time
+        
+        if time_since_last < self.min_request_interval:
+            wait_time = self.min_request_interval - time_since_last
+            await asyncio.sleep(wait_time)
+        
+        self.last_request_time = time.time()
+    
+    async def safe_api_call(self, prompt: str, max_tokens: int = 1500):
+        """Safe API call with exponential backoff and 10 RPM rate limiting"""
+        await self.rate_limit()
+        
+        for attempt in range(5):  # 5 attempts total like your example
+            try:
+                response = await self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=max_tokens,
+                    temperature=0.1,  # Lower temperature for more consistent results
+                )
+                
+                # Space out requests: 10 RPM = 1 request every 6 seconds
+                await asyncio.sleep(6)
+                
+                return response.choices[0].message.content
+                
+            except openai.RateLimitError as e:
+                # Exponential backoff with jitter for rate limit errors
+                wait = 2 ** attempt + random.uniform(0, 1)
+                print(f"Rate limit hit. Retrying in {wait:.2f}s...")
+                if attempt < 4:  # Don't wait on the last attempt
+                    await asyncio.sleep(wait)
+                continue
+                
+            except openai.APITimeoutError as e:
+                wait_time = [5, 15, 30, 45, 60][attempt]  # Extended for 5 attempts
+                if attempt < 4:
+                    await asyncio.sleep(wait_time)
+                continue
+                
+            except openai.APIConnectionError as e:
+                wait_time = [5, 15, 30, 45, 60][attempt]  # Extended for 5 attempts
+                if attempt < 4:
+                    await asyncio.sleep(wait_time)
+                continue
+                
+            except Exception as e:
+                wait_time = [3, 10, 20, 40, 60][attempt]  # Extended for 5 attempts
+                if attempt < 4:
+                    await asyncio.sleep(wait_time)
+                continue
+        
+        # If all attempts failed
+        raise Exception("Too many retries – still hitting rate limits. Please check your API key and quota, then try again.")
     
     # DEEP RESEARCH AGENT FUNCTIONS
     async def run_deep_research(self, query: str):
         """Deep Research Agent - Simplified for unified interface"""
-        if not query.strip():
-            yield "Please enter a research query."
-            return
-        
-        yield f"🚀 **NASA Deep Research Agent Activated**\n\n"
-        yield f"**Research Query:** {query}\n\n"
-        
-        # Domain analysis
-        yield "🔍 **Analyzing research domain...**\n"
-        domains = {
-            "mission_planning": "Space mission design and architecture",
-            "propulsion": "Rocket engines and spacecraft propulsion",
-            "materials": "Space-grade materials and composites",
-            "life_support": "Environmental control and crew safety",
-            "exploration": "Planetary exploration and scientific instruments"
-        }
-        
-        domain = "exploration"  # Simplified for demo
-        yield f"**Domain:** {domains[domain]}\n\n"
-        
-        # Research analysis
-        yield "📊 **Conducting NASA-level research analysis...**\n\n"
-        
-        prompt = f"""
-        As a NASA research specialist, provide comprehensive analysis of: {query}
-        
-        Include:
-        - Current NASA programs and missions
-        - Technical challenges and solutions
-        - Recent developments and innovations
-        - Future implications for space exploration
-        - Specific recommendations
-        
-        Format as a professional NASA research brief.
-        """
-        
-        response = await self.client.chat.completions.create(
-            model="gpt-4",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=1500
-        )
-        
-        yield "✅ **Research Analysis Complete**\n\n"
-        yield response.choices[0].message.content
+        try:
+            if not query.strip():
+                return "Please enter a research query."
+            
+            # Build complete response
+            result = f"🚀 **NASA Deep Research Agent Activated**\n\n"
+            result += f"**Research Query:** {query}\n\n"
+            
+            # Domain analysis
+            result += "🔍 **Analyzing research domain...**\n"
+            domains = {
+                "mission_planning": "Space mission design and architecture",
+                "propulsion": "Rocket engines and spacecraft propulsion",
+                "materials": "Space-grade materials and composites",
+                "life_support": "Environmental control and crew safety",
+                "exploration": "Planetary exploration and scientific instruments"
+            }
+            
+            domain = "exploration"  # Simplified for demo
+            result += f"**Domain:** {domains[domain]}\n\n"
+            
+            # Research analysis
+            result += "📊 **Conducting NASA-level research analysis...**\n\n"
+            
+            prompt = f"""
+            As a NASA research specialist, provide comprehensive analysis of: {query}
+            
+            Include:
+            - Current NASA programs and missions
+            - Technical challenges and solutions
+            - Recent developments and innovations
+            - Future implications for space exploration
+            - Specific recommendations
+            
+            Format as a professional NASA research brief.
+            """
+            
+            response_content = await self.safe_api_call(prompt, max_tokens=1500)
+            
+            result += "✅ **Research Analysis Complete**\n\n"
+            result += response_content
+            
+            return result
+            
+        except Exception as e:
+            return f"❌ **Error in Deep Research Agent:**\n\nError: {str(e)}\n\nPlease check your API configuration and try again."
     
     # ENGINEERING TEAM FUNCTIONS
     async def run_engineering_team(self, project_description: str):
         """Engineering Team Agent - Simplified for unified interface"""
-        if not project_description.strip():
-            yield "Please enter a project description."
-            return
-        
-        yield f"🚀 **NASA Engineering Team Design Session**\n\n"
-        yield f"**Project:** {project_description}\n\n"
-        
-        yield f"**Team Members:**\n"
-        yield f"- 🎯 Systems Engineer (Lead)\n"
-        yield f"- 🚀 Propulsion Engineer\n"
-        yield f"- 🏗️ Structural Engineer\n"
-        yield f"- 💻 Software Engineer\n"
-        yield f"- 🎮 Mission Operations Engineer\n\n"
-        
-        # Systems Design
-        yield "## 🎯 **Systems Design Phase**\n\n"
-        systems_prompt = f"""
-        As NASA's Systems Engineer, design the overall architecture for: {project_description}
-        
-        Provide:
-        1. Mission requirements and objectives
-        2. Top-level system architecture
-        3. Key performance parameters
-        4. Interface requirements for subsystems
-        
-        Use NASA engineering standards.
-        """
-        
-        response = await self.client.chat.completions.create(
-            model="gpt-4",
-            messages=[{"role": "user", "content": systems_prompt}],
-            max_tokens=1000
-        )
-        
-        yield response.choices[0].message.content + "\n\n"
-        
-        # Integration Summary
-        yield "## ✅ **Engineering Integration Summary**\n\n"
-        yield f"- **Systems Architecture:** Completed\n"
-        yield f"- **Subsystem Integration:** Verified\n"
-        yield f"- **NASA Standards Compliance:** Confirmed\n"
-        yield f"- **Ready for Development Phase:** ✅\n"
+        try:
+            if not project_description.strip():
+                return "Please enter a project description."
+            
+            result = f"🚀 **NASA Engineering Team Design Session**\n\n"
+            result += f"**Project:** {project_description}\n\n"
+            
+            result += f"**Team Members:**\n"
+            result += f"- 🎯 Systems Engineer (Lead)\n"
+            result += f"- 🚀 Propulsion Engineer\n"
+            result += f"- 🏗️ Structural Engineer\n"
+            result += f"- 💻 Software Engineer\n"
+            result += f"- 🎮 Mission Operations Engineer\n\n"
+            
+            # Systems Design
+            result += "## 🎯 **Systems Design Phase**\n\n"
+            
+            systems_prompt = f"""
+            As NASA's Systems Engineer, design the overall architecture for: {project_description}
+            
+            Provide:
+            1. Mission requirements and objectives
+            2. Top-level system architecture
+            3. Key performance parameters
+            4. Interface requirements for subsystems
+            
+            Use NASA engineering standards.
+            """
+            
+            response_content = await self.safe_api_call(systems_prompt, max_tokens=1000)
+            
+            result += response_content + "\n\n"
+            
+            # Integration Summary
+            result += "## ✅ **Engineering Integration Summary**\n\n"
+            result += f"- **Systems Architecture:** Completed\n"
+            result += f"- **Subsystem Integration:** Verified\n"
+            result += f"- **NASA Standards Compliance:** Confirmed\n"
+            result += f"- **Ready for Development Phase:** ✅\n"
+            
+            return result
+            
+        except Exception as e:
+            return f"❌ **Error in Engineering Team:**\n\nError: {str(e)}\n\nPlease check your API configuration and try again."
     
     # MISSION CONTROL FUNCTIONS
     async def run_mission_control(self, scenario: str, mission_phase: str):
         """Mission Control Agent - Simplified for unified interface"""
-        if not scenario.strip():
-            yield "Please enter a mission control scenario."
-            return
-        
-        yield f"🚀 **NASA Mission Control Response**\n\n"
-        yield f"**Mission Phase:** {mission_phase.replace('_', ' ').title()}\n"
-        yield f"**Scenario:** {scenario}\n\n"
-        
-        yield "## 🎯 **Mission Specialist Analysis**\n\n"
-        
-        # Determine priority level
-        priority = "critical" if any(word in scenario.lower() for word in ["emergency", "failure", "danger", "critical"]) else "elevated"
-        yield f"**Priority Level:** {priority.upper()}\n"
-        yield f"**Emergency Status:** {'🚨 ACTIVE' if priority == 'critical' else '✅ Normal'}\n\n"
-        
-        # Mission Control Analysis
-        mc_prompt = f"""
-        As NASA Mission Control team, analyze this scenario: {scenario}
-        
-        Mission Phase: {mission_phase}
-        Priority: {priority}
-        
-        Provide:
-        1. Situation assessment
-        2. Immediate actions required
-        3. Systems check recommendations
-        4. Flight Director decision
-        
-        Use NASA mission control protocols.
-        """
-        
-        response = await self.client.chat.completions.create(
-            model="gpt-4",
-            messages=[{"role": "user", "content": mc_prompt}],
-            max_tokens=1200
-        )
-        
-        yield "## 📡 **Mission Control Team Response**\n\n"
-        yield response.choices[0].message.content + "\n\n"
-        
-        yield f"**Flight Director Authorization:** ✅ APPROVED\n"
-        yield f"**Mission Status:** OPERATIONAL\n"
+        try:
+            if not scenario.strip():
+                return "Please enter a mission control scenario."
+            
+            result = f"🚀 **NASA Mission Control Response**\n\n"
+            result += f"**Mission Phase:** {mission_phase.replace('_', ' ').title()}\n"
+            result += f"**Scenario:** {scenario}\n\n"
+            
+            result += "## 🎯 **Mission Specialist Analysis**\n\n"
+            
+            # Determine priority level
+            priority = "critical" if any(word in scenario.lower() for word in ["emergency", "failure", "danger", "critical"]) else "elevated"
+            result += f"**Priority Level:** {priority.upper()}\n"
+            result += f"**Emergency Status:** {'🚨 ACTIVE' if priority == 'critical' else '✅ Normal'}\n\n"
+            
+            # Mission Control Analysis
+            mc_prompt = f"""
+            As NASA Mission Control team, analyze this scenario: {scenario}
+            
+            Mission Phase: {mission_phase}
+            Priority: {priority}
+            
+            Provide:
+            1. Situation assessment
+            2. Immediate actions required
+            3. Systems check recommendations
+            4. Flight Director decision
+            
+            Use NASA mission control protocols.
+            """
+            
+            response_content = await self.safe_api_call(mc_prompt, max_tokens=1200)
+            
+            result += "## 📡 **Mission Control Team Response**\n\n"
+            result += response_content + "\n\n"
+            
+            result += f"**Flight Director Authorization:** ✅ APPROVED\n"
+            result += f"**Mission Status:** OPERATIONAL\n"
+            
+            return result
+            
+        except Exception as e:
+            return f"❌ **Error in Mission Control:**\n\nError: {str(e)}\n\nPlease check your API configuration and try again."
     
     # SPACECRAFT AUTONOMY FUNCTIONS
     async def run_spacecraft_autonomy(self, situation: str, mission_scenario: str):
         """Spacecraft Autonomy Agent - Simplified for unified interface"""
-        if not situation.strip():
-            yield "Please enter an autonomous situation."
-            return
-        
-        yield f"🤖 **NASA Spacecraft Autonomy System**\n\n"
-        yield f"**Mission Scenario:** {mission_scenario.replace('_', ' ').title()}\n"
-        yield f"**Situation:** {situation}\n\n"
-        
-        # Simulate spacecraft state
-        yield "## 📊 **Spacecraft State Analysis**\n\n"
-        fuel_level = random.uniform(45, 85)
-        battery_level = random.uniform(70, 95)
-        comm_delay = {"mars_transit": 12.5, "lunar_orbit": 1.3, "deep_space": 28.0}.get(mission_scenario, 12.5)
-        
-        yield f"- **Fuel Level:** {fuel_level:.1f}%\n"
-        yield f"- **Battery Level:** {battery_level:.1f}%\n"
-        yield f"- **Communication Delay:** {comm_delay:.1f} minutes\n"
-        yield f"- **Autonomous Operation:** {'REQUIRED' if comm_delay > 15 else 'ENABLED'}\n\n"
-        
-        # Autonomous decision making
-        yield "## 🧠 **Autonomous Decision Analysis**\n\n"
-        
-        autonomy_prompt = f"""
-        As NASA's spacecraft autonomy system, analyze this situation: {situation}
-        
-        Spacecraft Status:
-        - Fuel: {fuel_level:.1f}%
-        - Battery: {battery_level:.1f}%
-        - Communication Delay: {comm_delay:.1f} minutes
-        
-        Provide autonomous decision including:
-        1. Situation assessment
-        2. Autonomous actions taken
-        3. Resource allocation adjustments
-        4. Risk mitigation strategies
-        
-        Use NASA autonomy protocols.
-        """
-        
-        response = await self.client.chat.completions.create(
-            model="gpt-4",
-            messages=[{"role": "user", "content": autonomy_prompt}],
-            max_tokens=1200
-        )
-        
-        yield response.choices[0].message.content + "\n\n"
-        
-        yield f"**Autonomous Decision Confidence:** 92%\n"
-        yield f"**System Status:** OPERATIONAL ✅\n"
+        try:
+            if not situation.strip():
+                return "Please enter an autonomous situation."
+            
+            result = f"🤖 **NASA Spacecraft Autonomy System**\n\n"
+            result += f"**Mission Scenario:** {mission_scenario.replace('_', ' ').title()}\n"
+            result += f"**Situation:** {situation}\n\n"
+            
+            # Simulate spacecraft state
+            result += "## 📊 **Spacecraft State Analysis**\n\n"
+            fuel_level = random.uniform(45, 85)
+            battery_level = random.uniform(70, 95)
+            comm_delay = {"mars_transit": 12.5, "lunar_orbit": 1.3, "deep_space": 28.0}.get(mission_scenario, 12.5)
+            
+            result += f"- **Fuel Level:** {fuel_level:.1f}%\n"
+            result += f"- **Battery Level:** {battery_level:.1f}%\n"
+            result += f"- **Communication Delay:** {comm_delay:.1f} minutes\n"
+            result += f"- **Autonomous Operation:** {'REQUIRED' if comm_delay > 15 else 'ENABLED'}\n\n"
+            
+            # Autonomous decision making
+            result += "## 🧠 **Autonomous Decision Analysis**\n\n"
+            
+            autonomy_prompt = f"""
+            As NASA's spacecraft autonomy system, analyze this situation: {situation}
+            
+            Spacecraft Status:
+            - Fuel: {fuel_level:.1f}%
+            - Battery: {battery_level:.1f}%
+            - Communication Delay: {comm_delay:.1f} minutes
+            
+            Provide autonomous decision including:
+            1. Situation assessment
+            2. Autonomous actions taken
+            3. Resource allocation adjustments
+            4. Risk mitigation strategies
+            
+            Use NASA autonomy protocols.
+            """
+            
+            response_content = await self.safe_api_call(autonomy_prompt, max_tokens=1200)
+            
+            result += response_content + "\n\n"
+            
+            result += f"**Autonomous Decision Confidence:** 92%\n"
+            result += f"**System Status:** OPERATIONAL ✅\n"
+            
+            return result
+            
+        except Exception as e:
+            return f"❌ **Error in Spacecraft Autonomy:**\n\nError: {str(e)}\n\nPlease check your API configuration and try again."
     
     # SATELLITE TRAFFIC MANAGEMENT FUNCTIONS
     async def run_satellite_traffic(self, scenario: str, orbital_zone: str):
         """Satellite Traffic Management Agent - Simplified for unified interface"""
-        if not scenario.strip():
-            yield "Please enter a traffic management scenario."
-            return
-        
-        yield f"🛰️ **NASA Satellite Traffic Management**\n\n"
-        yield f"**Orbital Zone:** {orbital_zone} \n"
-        yield f"**Scenario:** {scenario}\n\n"
-        
-        # Simulate orbital population
-        yield "## 📡 **Orbital Surveillance Status**\n\n"
-        active_sats = random.randint(15, 25)
-        debris_objects = random.randint(20, 35)
-        total_objects = active_sats + debris_objects
-        
-        yield f"- **Active Satellites:** {active_sats}\n"
-        yield f"- **Space Debris:** {debris_objects}\n"
-        yield f"- **Total Tracked Objects:** {total_objects}\n\n"
-        
-        # Risk assessment
-        yield "## ⚠️ **Collision Risk Assessment**\n\n"
-        high_risks = random.randint(1, 3)
-        medium_risks = random.randint(3, 6)
-        
-        yield f"- **High-Priority Risks:** {high_risks}\n"
-        yield f"- **Medium-Priority Risks:** {medium_risks}\n"
-        yield f"- **Risk Status:** {'🚨 ACTIVE MONITORING' if high_risks > 1 else '✅ NOMINAL'}\n\n"
-        
-        # Traffic management analysis
-        traffic_prompt = f"""
-        As NASA's satellite traffic management specialist, analyze: {scenario}
-        
-        Orbital Zone: {orbital_zone}
-        Objects Tracked: {total_objects}
-        High-Risk Situations: {high_risks}
-        
-        Provide:
-        1. Traffic management strategy
-        2. Collision avoidance recommendations
-        3. Orbital coordination protocols
-        4. Multi-satellite management approach
-        
-        Use NASA space traffic management protocols.
-        """
-        
-        response = await self.client.chat.completions.create(
-            model="gpt-4",
-            messages=[{"role": "user", "content": traffic_prompt}],
-            max_tokens=1200
-        )
-        
-        yield "## 🌐 **Traffic Management Response**\n\n"
-        yield response.choices[0].message.content + "\n\n"
-        
-        yield f"**System Status:** {'⚠️ ACTIVE MONITORING' if high_risks > 1 else '✅ NOMINAL'}\n"
+        try:
+            if not scenario.strip():
+                return "Please enter a traffic management scenario."
+            
+            result = f"🛰️ **NASA Satellite Traffic Management**\n\n"
+            result += f"**Orbital Zone:** {orbital_zone} \n"
+            result += f"**Scenario:** {scenario}\n\n"
+            
+            # Simulate orbital population
+            result += "## 📡 **Orbital Surveillance Status**\n\n"
+            active_sats = random.randint(15, 25)
+            debris_objects = random.randint(20, 35)
+            total_objects = active_sats + debris_objects
+            
+            result += f"- **Active Satellites:** {active_sats}\n"
+            result += f"- **Space Debris:** {debris_objects}\n"
+            result += f"- **Total Tracked Objects:** {total_objects}\n\n"
+            
+            # Risk assessment
+            result += "## ⚠️ **Collision Risk Assessment**\n\n"
+            high_risks = random.randint(1, 3)
+            medium_risks = random.randint(3, 6)
+            
+            result += f"- **High-Priority Risks:** {high_risks}\n"
+            result += f"- **Medium-Priority Risks:** {medium_risks}\n"
+            result += f"- **Risk Status:** {'🚨 ACTIVE MONITORING' if high_risks > 1 else '✅ NOMINAL'}\n\n"
+            
+            # Traffic management analysis
+            traffic_prompt = f"""
+            As NASA's satellite traffic management specialist, analyze: {scenario}
+            
+            Orbital Zone: {orbital_zone}
+            Objects Tracked: {total_objects}
+            High-Risk Situations: {high_risks}
+            
+            Provide:
+            1. Traffic management strategy
+            2. Collision avoidance recommendations
+            3. Orbital coordination protocols
+            4. Multi-satellite management approach
+            
+            Use NASA space traffic management protocols.
+            """
+            
+            response_content = await self.safe_api_call(traffic_prompt, max_tokens=1200)
+            
+            result += "## 🌐 **Traffic Management Response**\n\n"
+            result += response_content + "\n\n"
+            
+            result += f"**System Status:** {'⚠️ ACTIVE MONITORING' if high_risks > 1 else '✅ NOMINAL'}\n"
+            
+            return result
+            
+        except Exception as e:
+            return f"❌ **Error in Satellite Traffic Management:**\n\nError: {str(e)}\n\nPlease check your API configuration and try again."
     
     # PLANETARY EXPLORATION FUNCTIONS
     async def run_planetary_exploration(self, planetary_body: str, region: str, objectives: str):
         """Planetary Exploration Agent - Simplified for unified interface"""
-        if not region.strip():
-            yield "Please enter a target region."
-            return
-        
-        yield f"🌍 **NASA Planetary Exploration Mission**\n\n"
-        yield f"**Target:** {planetary_body.title()}\n"
-        yield f"**Region:** {region}\n\n"
-        
-        # Parse objectives
-        mission_objectives = [obj.strip() for obj in objectives.split(',') if obj.strip()]
-        if not mission_objectives:
-            mission_objectives = ["Search for signs of past life", "Analyze geological composition"]
-        
-        yield f"### **Mission Objectives:**\n"
-        for obj in mission_objectives:
-            yield f"- {obj}\n"
-        yield "\n"
-        
-        # Terrain analysis
-        yield "## 🔍 **Terrain Analysis Phase**\n\n"
-        features_found = random.randint(5, 8)
-        high_priority_targets = random.randint(2, 4)
-        
-        yield f"- **Terrain Features Identified:** {features_found}\n"
-        yield f"- **High Priority Targets:** {high_priority_targets}\n"
-        yield f"- **Scientific Interest Level:** High\n\n"
-        
-        # Exploration planning
-        exploration_prompt = f"""
-        As NASA's planetary exploration specialist, plan exploration of: {region} on {planetary_body}
-        
-        Mission Objectives: {', '.join(mission_objectives)}
-        Features Found: {features_found}
-        
-        Provide:
-        1. Terrain analysis summary
-        2. Target prioritization strategy
-        3. Rover path planning approach
-        4. Science activity scheduling
-        5. Mission success metrics
-        
-        Use NASA planetary exploration protocols.
-        """
-        
-        response = await self.client.chat.completions.create(
-            model="gpt-4",
-            messages=[{"role": "user", "content": exploration_prompt}],
-            max_tokens=1200
-        )
-        
-        yield "## 🎯 **Exploration Plan**\n\n"
-        yield response.choices[0].message.content + "\n\n"
-        
-        yield f"**Mission Status:** READY FOR EXECUTION ✅\n"
+        try:
+            if not region.strip():
+                return "Please enter a target region."
+            
+            result = f"🌍 **NASA Planetary Exploration Mission**\n\n"
+            result += f"**Target:** {planetary_body.title()}\n"
+            result += f"**Region:** {region}\n\n"
+            
+            # Parse objectives
+            mission_objectives = [obj.strip() for obj in objectives.split(',') if obj.strip()]
+            if not mission_objectives:
+                mission_objectives = ["Search for signs of past life", "Analyze geological composition"]
+            
+            result += f"### **Mission Objectives:**\n"
+            for obj in mission_objectives:
+                result += f"- {obj}\n"
+            result += "\n"
+            
+            # Terrain analysis
+            result += "## 🔍 **Terrain Analysis Phase**\n\n"
+            features_found = random.randint(5, 8)
+            high_priority_targets = random.randint(2, 4)
+            
+            result += f"- **Terrain Features Identified:** {features_found}\n"
+            result += f"- **High Priority Targets:** {high_priority_targets}\n"
+            result += f"- **Scientific Interest Level:** High\n\n"
+            
+            # Exploration planning
+            exploration_prompt = f"""
+            As NASA's planetary exploration specialist, plan exploration of: {region} on {planetary_body}
+            
+            Mission Objectives: {', '.join(mission_objectives)}
+            Features Found: {features_found}
+            
+            Provide:
+            1. Terrain analysis summary
+            2. Target prioritization strategy
+            3. Rover path planning approach
+            4. Science activity scheduling
+            5. Mission success metrics
+            
+            Use NASA planetary exploration protocols.
+            """
+            
+            response_content = await self.safe_api_call(exploration_prompt, max_tokens=1200)
+            
+            result += "## 🎯 **Exploration Plan**\n\n"
+            result += response_content + "\n\n"
+            
+            result += f"**Mission Status:** READY FOR EXECUTION ✅\n"
+            
+            return result
+            
+        except Exception as e:
+            return f"❌ **Error in Planetary Exploration:**\n\nError: {str(e)}\n\nPlease check your API configuration and try again."
 
 # Create the unified interface
 def create_nasa_portfolio():
