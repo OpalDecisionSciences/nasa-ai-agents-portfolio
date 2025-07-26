@@ -34,8 +34,16 @@ class NASAUnifiedPortfolio:
         if not api_key:
             raise ValueError("OPENAI_API_KEY environment variable is required")
         
+        # Debug API key (show first/last 4 chars for security)
+        print(f"🔑 Using API key: {api_key[:4]}...{api_key[-4:]}")
+        print(f"🤖 Using model: {os.getenv('OPENAI_MODEL', 'gpt-4o')}")
+        
         # Check for organization ID
         org_id = os.getenv("OPENAI_ORG_ID")
+        if org_id:
+            print(f"🏢 Using organization: {org_id[:8]}...")
+        else:
+            print("🏢 No organization ID set")
         
         # Initialize client with proper configuration
         client_kwargs = {
@@ -50,7 +58,7 @@ class NASAUnifiedPortfolio:
         self.client = openai.AsyncOpenAI(**client_kwargs)
         self.model = os.getenv("OPENAI_MODEL", "gpt-4o")
         self.last_request_time = 0
-        self.min_request_interval = 2.0  # 2 seconds between requests to avoid rate limits
+        self.min_request_interval = 10.0  # 10 seconds between requests to respect GPT-4o TPM limits
     
     async def rate_limit(self):
         """Rate limiting to prevent API overload"""
@@ -63,12 +71,39 @@ class NASAUnifiedPortfolio:
         
         self.last_request_time = time.time()
     
-    async def safe_api_call(self, prompt: str, max_tokens: int = 1500):
-        """Simple, reliable API call - based on working hackathon project pattern"""
+    async def safe_api_call_streaming(self, prompt: str, max_tokens: int = 800):
+        """Streaming API call for real-time output"""
         await self.rate_limit()
         
         try:
-            # Direct async call - simpler and more reliable
+            # Use streaming for better UX and rate limit management
+            stream = await self.client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=max_tokens,
+                temperature=0.1,
+                stream=True
+            )
+            
+            full_response = ""
+            async for chunk in stream:
+                if chunk.choices[0].delta.content:
+                    content = chunk.choices[0].delta.content
+                    full_response += content
+                    yield content  # Stream chunks in real-time
+            
+            return full_response
+            
+        except openai.RateLimitError as e:
+            yield f"⚠️ **Rate Limit**: GPT-4o TPM/RPM limit hit. Please wait 60 seconds."
+        except Exception as e:
+            yield f"API processing error: {str(e)}"
+    
+    async def safe_api_call(self, prompt: str, max_tokens: int = 800):
+        """Non-streaming API call for simple responses"""
+        await self.rate_limit()
+        
+        try:
             response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}],
@@ -77,8 +112,9 @@ class NASAUnifiedPortfolio:
             )
             return response.choices[0].message.content
             
+        except openai.RateLimitError as e:
+            return f"⚠️ **Rate Limit**: GPT-4o TPM/RPM limit hit. Please wait 60 seconds."
         except Exception as e:
-            # Simple error handling like the working project
             return f"API processing error: {str(e)}"
     
     # DEEP RESEARCH AGENT FUNCTIONS
@@ -105,23 +141,32 @@ class NASAUnifiedPortfolio:
             domain = "exploration"  # Simplified for demo
             result += f"**Domain:** {domains[domain]}\n\n"
             
-            # Research analysis
+            # Single comprehensive research call (BATCHED approach)
             result += "📊 **Conducting NASA-level research analysis...**\n\n"
             
-            prompt = f"""
+            # BATCHED PROMPT: Combine all research steps into one efficient call
+            batched_prompt = f"""
             As a NASA research specialist, provide comprehensive analysis of: {query}
             
-            Include:
-            - Current NASA programs and missions
-            - Technical challenges and solutions
-            - Recent developments and innovations
-            - Future implications for space exploration
-            - Specific recommendations
+            Please structure your response with these sections:
             
-            Format as a professional NASA research brief.
+            1. **Domain Classification**: Identify the NASA research domain (mission planning, propulsion, materials, life support, exploration, communications)
+            
+            2. **Current NASA Programs**: List relevant current NASA missions and programs
+            
+            3. **Technical Analysis**: Cover:
+               - Technical challenges and solutions
+               - Recent developments and innovations
+               - Safety and reliability considerations
+            
+            4. **Future Implications**: Space exploration impact and recommendations
+            
+            5. **Research Summary**: Key findings and next steps
+            
+            Format as a professional NASA research brief. Keep each section concise but comprehensive.
             """
             
-            response_content = await self.safe_api_call(prompt, max_tokens=1500)
+            response_content = await self.safe_api_call(batched_prompt, max_tokens=1000)
             
             result += "✅ **Research Analysis Complete**\n\n"
             result += response_content
@@ -163,7 +208,7 @@ class NASAUnifiedPortfolio:
             Use NASA engineering standards.
             """
             
-            response_content = await self.safe_api_call(systems_prompt, max_tokens=1000)
+            response_content = await self.safe_api_call(systems_prompt, max_tokens=800)
             
             result += response_content + "\n\n"
             
@@ -213,7 +258,7 @@ class NASAUnifiedPortfolio:
             Use NASA mission control protocols.
             """
             
-            response_content = await self.safe_api_call(mc_prompt, max_tokens=1200)
+            response_content = await self.safe_api_call(mc_prompt, max_tokens=600)
             
             result += "## 📡 **Mission Control Team Response**\n\n"
             result += response_content + "\n\n"
@@ -268,7 +313,7 @@ class NASAUnifiedPortfolio:
             Use NASA autonomy protocols.
             """
             
-            response_content = await self.safe_api_call(autonomy_prompt, max_tokens=1200)
+            response_content = await self.safe_api_call(autonomy_prompt, max_tokens=600)
             
             result += response_content + "\n\n"
             
@@ -327,7 +372,7 @@ class NASAUnifiedPortfolio:
             Use NASA space traffic management protocols.
             """
             
-            response_content = await self.safe_api_call(traffic_prompt, max_tokens=1200)
+            response_content = await self.safe_api_call(traffic_prompt, max_tokens=600)
             
             result += "## 🌐 **Traffic Management Response**\n\n"
             result += response_content + "\n\n"
@@ -386,7 +431,7 @@ class NASAUnifiedPortfolio:
             Use NASA planetary exploration protocols.
             """
             
-            response_content = await self.safe_api_call(exploration_prompt, max_tokens=1200)
+            response_content = await self.safe_api_call(exploration_prompt, max_tokens=600)
             
             result += "## 🎯 **Exploration Plan**\n\n"
             result += response_content + "\n\n"
