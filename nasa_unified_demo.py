@@ -50,7 +50,7 @@ class NASAUnifiedPortfolio:
         self.client = openai.AsyncOpenAI(**client_kwargs)
         self.model = os.getenv("OPENAI_MODEL", "gpt-4o")
         self.last_request_time = 0
-        self.min_request_interval = 3.0  # Increased to 3 seconds between requests
+        self.min_request_interval = 2.0  # 2 seconds between requests to avoid rate limits
     
     async def rate_limit(self):
         """Rate limiting to prevent API overload"""
@@ -64,51 +64,25 @@ class NASAUnifiedPortfolio:
         self.last_request_time = time.time()
     
     async def safe_api_call(self, prompt: str, max_tokens: int = 1500):
-        """Safe API call with exponential backoff and 10 RPM rate limiting"""
+        """Simple, reliable API call - based on working hackathon project pattern"""
         await self.rate_limit()
         
-        for attempt in range(5):  # 5 attempts total like your example
-            try:
-                response = await self.client.chat.completions.create(
+        try:
+            # Use the proven pattern from your working hackathon project
+            def make_openai_request():
+                return self.client.chat.completions.create(
                     model=self.model,
                     messages=[{"role": "user", "content": prompt}],
                     max_tokens=max_tokens,
-                    temperature=0.1,  # Lower temperature for more consistent results
+                    temperature=0.1,
                 )
-                
-                # Space out requests: 10 RPM = 1 request every 6 seconds
-                await asyncio.sleep(6)
-                
-                return response.choices[0].message.content
-                
-            except openai.RateLimitError as e:
-                # Exponential backoff with jitter for rate limit errors
-                wait = 2 ** attempt + random.uniform(0, 1)
-                print(f"Rate limit hit. Retrying in {wait:.2f}s...")
-                if attempt < 4:  # Don't wait on the last attempt
-                    await asyncio.sleep(wait)
-                continue
-                
-            except openai.APITimeoutError as e:
-                wait_time = [5, 15, 30, 45, 60][attempt]  # Extended for 5 attempts
-                if attempt < 4:
-                    await asyncio.sleep(wait_time)
-                continue
-                
-            except openai.APIConnectionError as e:
-                wait_time = [5, 15, 30, 45, 60][attempt]  # Extended for 5 attempts
-                if attempt < 4:
-                    await asyncio.sleep(wait_time)
-                continue
-                
-            except Exception as e:
-                wait_time = [3, 10, 20, 40, 60][attempt]  # Extended for 5 attempts
-                if attempt < 4:
-                    await asyncio.sleep(wait_time)
-                continue
-        
-        # If all attempts failed
-        raise Exception("Too many retries – still hitting rate limits. Please check your API key and quota, then try again.")
+            
+            response = await asyncio.to_thread(make_openai_request)
+            return response.choices[0].message.content
+            
+        except Exception as e:
+            # Simple error handling like the working project
+            return f"API processing error: {str(e)}"
     
     # DEEP RESEARCH AGENT FUNCTIONS
     async def run_deep_research(self, query: str):
