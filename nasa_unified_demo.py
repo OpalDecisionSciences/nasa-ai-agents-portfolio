@@ -68,16 +68,13 @@ class NASAUnifiedPortfolio:
         await self.rate_limit()
         
         try:
-            # Use the proven pattern from your working hackathon project
-            def make_openai_request():
-                return self.client.chat.completions.create(
-                    model=self.model,
-                    messages=[{"role": "user", "content": prompt}],
-                    max_tokens=max_tokens,
-                    temperature=0.1,
-                )
-            
-            response = await asyncio.to_thread(make_openai_request)
+            # Direct async call - simpler and more reliable
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=max_tokens,
+                temperature=0.1,
+            )
             return response.choices[0].message.content
             
         except Exception as e:
