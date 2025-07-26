@@ -9,11 +9,39 @@ import openai
 from typing import AsyncIterator, List, Dict
 import json
 import os
+import time
 from datetime import datetime
+from dotenv import load_dotenv
+
+load_dotenv()
 
 class NASAResearchAgent:
     def __init__(self):
-        self.client = openai.AsyncOpenAI()
+        # Ensure environment variables are loaded
+        load_dotenv()
+        
+        # Configure OpenAI client with better settings
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY environment variable is required")
+        
+        # Check for organization ID
+        org_id = os.getenv("OPENAI_ORG_ID")
+        
+        # Initialize client with proper configuration
+        client_kwargs = {
+            "api_key": api_key,
+            "timeout": 60.0,  # 60 second timeout
+            "max_retries": 3   # Built-in retry logic
+        }
+        
+        if org_id:
+            client_kwargs["organization"] = org_id
+            
+        self.client = openai.AsyncOpenAI(**client_kwargs)
+        self.model = os.getenv("OPENAI_MODEL", "gpt-4o")
+        self.last_request_time = 0
+        self.min_request_interval = 3.0
         self.research_domains = {
             "mission_planning": "Space mission design, trajectory analysis, and mission architecture",
             "propulsion": "Rocket engines, spacecraft propulsion systems, and fuel efficiency",
@@ -22,6 +50,32 @@ class NASAResearchAgent:
             "exploration": "Planetary exploration, rovers, landers, and scientific instruments",
             "communications": "Deep space communications, satellite networks, and data transmission"
         }
+    
+    async def rate_limit(self):
+        """Rate limiting to prevent API overload"""
+        current_time = time.time()
+        time_since_last = current_time - self.last_request_time
+        
+        if time_since_last < self.min_request_interval:
+            wait_time = self.min_request_interval - time_since_last
+            await asyncio.sleep(wait_time)
+        
+        self.last_request_time = time.time()
+    
+    async def safe_api_call(self, prompt: str, max_tokens: int = 1500):
+        """Safe API call with rate limiting and error handling"""
+        await self.rate_limit()
+        
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=max_tokens,
+                temperature=0.1,
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            return f"Error during API call: {str(e)}"
     
     async def analyze_research_domain(self, query: str) -> str:
         """Determine the most relevant NASA research domain for the query"""
@@ -35,13 +89,11 @@ class NASAResearchAgent:
         Return only the domain key (e.g., 'mission_planning').
         """
         
-        response = await self.client.chat.completions.create(
-            model="gpt-4",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=50
-        )
+        response = await self.safe_api_call(prompt, max_tokens=50)
+        if "Error during API call" in response:
+            return "exploration"  # Default fallback
         
-        domain = response.choices[0].message.content.strip().strip('"\'')
+        domain = response.strip().strip('"\'')
         return domain if domain in self.research_domains else "exploration"
     
     async def generate_research_questions(self, query: str, domain: str) -> List[str]:
@@ -60,14 +112,12 @@ class NASAResearchAgent:
         Return as a JSON list of strings.
         """
         
-        response = await self.client.chat.completions.create(
-            model="gpt-4",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=500
-        )
+        response = await self.safe_api_call(prompt, max_tokens=500)
+        if "Error during API call" in response:
+            return [query]  # Fallback
         
         try:
-            questions = json.loads(response.choices[0].message.content)
+            questions = json.loads(response)
             return questions
         except:
             return [query]  # Fallback
@@ -89,13 +139,7 @@ class NASAResearchAgent:
         Use technical accuracy appropriate for NASA engineers and scientists.
         """
         
-        response = await self.client.chat.completions.create(
-            model="gpt-4",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=1000
-        )
-        
-        return response.choices[0].message.content
+        return await self.safe_api_call(prompt, max_tokens=1000)
     
     async def synthesize_report(self, query: str, domain: str, research_results: List[str]) -> str:
         """Create final NASA research report"""
@@ -118,13 +162,7 @@ class NASAResearchAgent:
         Use NASA terminology and reference real NASA programs where applicable.
         """
         
-        response = await self.client.chat.completions.create(
-            model="gpt-4",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=2000
-        )
-        
-        return response.choices[0].message.content
+        return await self.safe_api_call(prompt, max_tokens=2000)
 
     async def run_research(self, query: str) -> AsyncIterator[str]:
         """Main research pipeline"""
@@ -238,6 +276,6 @@ if __name__ == "__main__":
     demo.launch(
         server_name="0.0.0.0",
         server_port=7860,
-        share=True,
+        share=False,  # Local-only access
         inbrowser=True
     )

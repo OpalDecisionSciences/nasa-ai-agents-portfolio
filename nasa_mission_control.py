@@ -14,9 +14,13 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 import uuid
 import asyncio
+import os
 from datetime import datetime
 import gradio as gr
 import json
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Mission Control State
 class MissionState(TypedDict):
@@ -135,10 +139,17 @@ class NASAMissionControl:
     
     async def setup(self):
         """Initialize the mission control system"""
+        # Check for API key
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY environment variable is required")
+        
+        model = os.getenv("OPENAI_MODEL", "gpt-4o")
+        
         # Initialize LLMs for different roles
-        self.mission_specialist_llm = ChatOpenAI(model="gpt-4", temperature=0.1)
-        self.flight_director_llm = ChatOpenAI(model="gpt-4", temperature=0.0)  # Most conservative
-        self.systems_engineer_llm = ChatOpenAI(model="gpt-4", temperature=0.1)
+        self.mission_specialist_llm = ChatOpenAI(model=model, temperature=0.1, api_key=api_key)
+        self.flight_director_llm = ChatOpenAI(model=model, temperature=0.0, api_key=api_key)  # Most conservative
+        self.systems_engineer_llm = ChatOpenAI(model=model, temperature=0.1, api_key=api_key)
         
         # Setup tools (simplified for demo)
         self.tools = []  # Tools would be added here in real implementation
@@ -493,6 +504,6 @@ if __name__ == "__main__":
     demo.launch(
         server_name="0.0.0.0",
         server_port=7862,
-        share=True,
+        share=False,  # Local-only access
         inbrowser=True
     )

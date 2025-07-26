@@ -9,9 +9,14 @@ import asyncio
 import json
 import random
 import base64
+import os
+import time
 from typing import Dict, List, Tuple, Any, Optional
 from datetime import datetime, timedelta
 from pydantic import BaseModel, Field
+from dotenv import load_dotenv
+
+load_dotenv()
 
 class TerrainFeature(BaseModel):
     """Geological or surface feature"""
@@ -49,7 +54,18 @@ class NASAPlanetaryExplorer:
     """Advanced planetary exploration and mapping system"""
     
     def __init__(self):
-        self.client = openai.AsyncOpenAI()
+        # Configure OpenAI client
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY environment variable is required")
+        
+        client_kwargs = {"api_key": api_key, "timeout": 60.0, "max_retries": 3}
+        org_id = os.getenv("OPENAI_ORG_ID")
+        if org_id:
+            client_kwargs["organization"] = org_id
+            
+        self.client = openai.AsyncOpenAI(**client_kwargs)
+        self.model = os.getenv("OPENAI_MODEL", "gpt-4o")
         self.planetary_bodies = {
             "mars": {
                 "gravity": 3.71,
@@ -109,11 +125,16 @@ class NASAPlanetaryExplorer:
         Use established planetary geology terminology and NASA exploration protocols.
         """
         
-        response = await self.client.chat.completions.create(
-            model="gpt-4",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=1200
-        )
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=1200,
+                temperature=0.1
+            )
+            analysis_content = response.choices[0].message.content
+        except Exception as e:
+            analysis_content = f"Error in terrain analysis: {str(e)}"
         
         # Generate realistic terrain features based on analysis
         features = []
@@ -143,7 +164,7 @@ class NASAPlanetaryExplorer:
                 hazard_level=random.choice(["low", "low", "medium", "high"])
             ))
         
-        return features, response.choices[0].message.content
+        return features, analysis_content
     
     async def prioritize_targets(self, features: List[TerrainFeature], mission_objectives: List[str]) -> List[ExplorationTarget]:
         """Prioritize exploration targets based on scientific value and mission objectives"""
@@ -174,11 +195,16 @@ class NASAPlanetaryExplorer:
         Use NASA planetary exploration best practices.
         """
         
-        response = await self.client.chat.completions.create(
-            model="gpt-4",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=1000
-        )
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=1000,
+                temperature=0.1
+            )
+            analysis_content = response.choices[0].message.content
+        except Exception as e:
+            analysis_content = f"Error in target prioritization: {str(e)}"
         
         # Generate exploration targets based on features
         targets = []
@@ -210,7 +236,7 @@ class NASAPlanetaryExplorer:
                 risk_factors=["terrain_difficulty"] if feature.accessibility == "difficult" else []
             ))
         
-        return targets, response.choices[0].message.content
+        return targets, analysis_content
     
     async def plan_rover_path(self, targets: List[ExplorationTarget], rover_position: Tuple[float, float]) -> PathPlan:
         """Plan optimal rover path between exploration targets"""
@@ -241,11 +267,16 @@ class NASAPlanetaryExplorer:
         Use NASA rover operations protocols and planetary navigation techniques.
         """
         
-        response = await self.client.chat.completions.create(
-            model="gpt-4",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=800
-        )
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=800,
+                temperature=0.1
+            )
+            analysis_content = response.choices[0].message.content
+        except Exception as e:
+            analysis_content = f"Error in path planning: {str(e)}"
         
         # Generate realistic path planning
         high_priority_targets = [t for t in targets if t.priority == "high"][:4]
@@ -274,7 +305,7 @@ class NASAPlanetaryExplorer:
             alternative_paths=2
         )
         
-        return path_plan, response.choices[0].message.content
+        return path_plan, analysis_content
     
     async def autonomous_science_selection(self, available_time: float, targets: List[ExplorationTarget]) -> Dict[str, Any]:
         """Autonomous selection of science activities based on available time and conditions"""
@@ -305,11 +336,16 @@ class NASAPlanetaryExplorer:
         Use NASA's autonomous science protocols and adaptive mission planning.
         """
         
-        response = await self.client.chat.completions.create(
-            model="gpt-4",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=1000
-        )
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=1000,
+                temperature=0.1
+            )
+            analysis_content = response.choices[0].message.content
+        except Exception as e:
+            analysis_content = f"Error in autonomous science selection: {str(e)}"
         
         # Select targets that fit within time constraints
         selected_targets = []
@@ -329,7 +365,7 @@ class NASAPlanetaryExplorer:
             "selected_targets": selected_targets,
             "total_duration": available_time - remaining_time,
             "utilization": ((available_time - remaining_time) / available_time) * 100,
-            "analysis": response.choices[0].message.content
+            "analysis": analysis_content
         }
     
     async def run_exploration_mission(self, planetary_body: str, region: str, mission_objectives: List[str]):
@@ -545,6 +581,6 @@ if __name__ == "__main__":
     demo.launch(
         server_name="0.0.0.0",
         server_port=7865,
-        share=True,
+        share=False,  # Local-only access
         inbrowser=True
     )

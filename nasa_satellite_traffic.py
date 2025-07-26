@@ -9,9 +9,14 @@ import asyncio
 import json
 import random
 import math
+import os
+import time
 from typing import Dict, List, Tuple, Any, Optional
 from datetime import datetime, timedelta
 from pydantic import BaseModel, Field
+from dotenv import load_dotenv
+
+load_dotenv()
 
 class SatelliteObject(BaseModel):
     """Satellite or space object representation"""
@@ -51,7 +56,18 @@ class NASASatelliteTrafficManager:
     """Advanced orbital traffic management system"""
     
     def __init__(self):
-        self.client = openai.AsyncOpenAI()
+        # Configure OpenAI client
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY environment variable is required")
+        
+        client_kwargs = {"api_key": api_key, "timeout": 60.0, "max_retries": 3}
+        org_id = os.getenv("OPENAI_ORG_ID")
+        if org_id:
+            client_kwargs["organization"] = org_id
+            
+        self.client = openai.AsyncOpenAI(**client_kwargs)
+        self.model = os.getenv("OPENAI_MODEL", "gpt-4o")
         self.tracked_objects = []
         self.collision_risks = []
         self.orbital_zones = {
@@ -265,11 +281,22 @@ class NASASatelliteTrafficManager:
         Use orbital mechanics principles and NASA collision avoidance protocols.
         """
         
-        response = await self.client.chat.completions.create(
-            model="gpt-4",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=800
-        )
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=800,
+                temperature=0.1
+            )
+        except Exception as e:
+            # Return error fallback
+            response = type('obj', (object,), {
+                'choices': [type('obj', (object,), {
+                    'message': type('obj', (object,), {
+                        'content': f"Error in maneuver planning: {str(e)}"
+                    })()
+                })()]
+            })()
         
         return ManeuverPlan(
             object_id=maneuver_obj.id,
@@ -304,13 +331,16 @@ class NASASatelliteTrafficManager:
         Use NASA's space traffic management best practices.
         """
         
-        response = await self.client.chat.completions.create(
-            model="gpt-4",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=1000
-        )
-        
-        return response.choices[0].message.content
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=1000,
+                temperature=0.1
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            return f"Error in constellation management: {str(e)}"
     
     async def run_traffic_management(self, scenario: str, orbital_zone: str):
         """Run complete orbital traffic management simulation"""
@@ -488,6 +518,6 @@ if __name__ == "__main__":
     demo.launch(
         server_name="0.0.0.0",
         server_port=7864,
-        share=True,
+        share=False,  # Local-only access
         inbrowser=True
     )

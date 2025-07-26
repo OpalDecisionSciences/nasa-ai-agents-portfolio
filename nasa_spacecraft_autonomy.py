@@ -9,9 +9,14 @@ import asyncio
 import json
 import random
 import math
+import os
+import time
 from typing import Dict, List, Tuple, Any
 from datetime import datetime, timedelta
 from pydantic import BaseModel, Field
+from dotenv import load_dotenv
+
+load_dotenv()
 
 class SpacecraftState(BaseModel):
     """Current spacecraft state and telemetry"""
@@ -37,8 +42,29 @@ class NASASpacecraftAutonomy:
     """Advanced spacecraft autonomy system"""
     
     def __init__(self):
-        self.client = openai.AsyncOpenAI()
+        # Configure OpenAI client with better settings
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY environment variable is required")
+        
+        # Check for organization ID
+        org_id = os.getenv("OPENAI_ORG_ID")
+        
+        # Initialize client with proper configuration
+        client_kwargs = {
+            "api_key": api_key,
+            "timeout": 60.0,
+            "max_retries": 3
+        }
+        
+        if org_id:
+            client_kwargs["organization"] = org_id
+            
+        self.client = openai.AsyncOpenAI(**client_kwargs)
+        self.model = os.getenv("OPENAI_MODEL", "gpt-4o")
         self.spacecraft_state = None
+        self.last_request_time = 0
+        self.min_request_interval = 3.0
         self.autonomy_rules = {
             "critical_fuel": 15.0,  # Critical fuel level %
             "critical_battery": 20.0,  # Critical battery level %
@@ -162,13 +188,16 @@ class NASASpacecraftAutonomy:
         Use spacecraft navigation protocols and orbital mechanics principles.
         """
         
-        response = await self.client.chat.completions.create(
-            model="gpt-4",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=800
-        )
-        
-        return {"navigation_analysis": response.choices[0].message.content}
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=800,
+                temperature=0.1
+            )
+            return {"navigation_analysis": response.choices[0].message.content}
+        except Exception as e:
+            return {"navigation_analysis": f"Error in navigation analysis: {str(e)}"}
     
     async def fault_detection_recovery(self, state: SpacecraftState, anomalies: List[str]) -> Dict[str, Any]:
         """Autonomous fault detection and recovery procedures"""
@@ -194,13 +223,16 @@ class NASASpacecraftAutonomy:
         Follow NASA spacecraft emergency procedures and safety protocols.
         """
         
-        response = await self.client.chat.completions.create(
-            model="gpt-4",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=1000
-        )
-        
-        return {"recovery_procedures": response.choices[0].message.content}
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=1000,
+                temperature=0.1
+            )
+            return {"recovery_procedures": response.choices[0].message.content}
+        except Exception as e:
+            return {"recovery_procedures": f"Error in fault recovery: {str(e)}"}
     
     async def resource_management(self, state: SpacecraftState) -> Dict[str, float]:
         """Smart resource allocation and management"""
@@ -282,14 +314,16 @@ class NASASpacecraftAutonomy:
         Use NASA autonomy protocols and prioritize mission safety.
         """
         
-        llm_with_output = self.client.chat.completions.create(
-            model="gpt-4",
-            messages=[{"role": "user", "content": decision_prompt}],
-            max_tokens=1200
-        )
-        
-        response = await llm_with_output
-        content = response.choices[0].message.content
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": decision_prompt}],
+                max_tokens=1200,
+                temperature=0.1
+            )
+            content = response.choices[0].message.content
+        except Exception as e:
+            content = f"Error in autonomous decision making: {str(e)}"
         
         # Parse and structure the decision
         decision = AutonomyDecision(
@@ -465,6 +499,6 @@ if __name__ == "__main__":
     demo.launch(
         server_name="0.0.0.0",
         server_port=7863,
-        share=True,
+        share=False,  # Local-only access
         inbrowser=True
     )

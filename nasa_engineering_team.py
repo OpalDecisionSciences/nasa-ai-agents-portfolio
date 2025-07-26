@@ -6,22 +6,61 @@ Simulates a NASA engineering team for spacecraft and mission system design
 import openai
 import asyncio
 import json
+import os
+import time
 from typing import Dict, List, Any
 from datetime import datetime
 import gradio as gr
+from dotenv import load_dotenv
+
+load_dotenv()
 
 class NASAAgent:
     """Base class for NASA specialized agents"""
     
-    def __init__(self, role: str, specialization: str, model: str = "gpt-4"):
+    def __init__(self, role: str, specialization: str, model: str = None):
         self.role = role
         self.specialization = specialization
-        self.model = model
-        self.client = openai.AsyncOpenAI()
+        
+        # Configure OpenAI client with better settings
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY environment variable is required")
+        
+        # Check for organization ID
+        org_id = os.getenv("OPENAI_ORG_ID")
+        
+        # Initialize client with proper configuration
+        client_kwargs = {
+            "api_key": api_key,
+            "timeout": 60.0,
+            "max_retries": 3
+        }
+        
+        if org_id:
+            client_kwargs["organization"] = org_id
+            
+        self.client = openai.AsyncOpenAI(**client_kwargs)
+        self.model = model or os.getenv("OPENAI_MODEL", "gpt-4o")
         self.conversation_history = []
+        self.last_request_time = 0
+        self.min_request_interval = 3.0
+    
+    async def rate_limit(self):
+        """Rate limiting to prevent API overload"""
+        current_time = time.time()
+        time_since_last = current_time - self.last_request_time
+        
+        if time_since_last < self.min_request_interval:
+            wait_time = self.min_request_interval - time_since_last
+            await asyncio.sleep(wait_time)
+        
+        self.last_request_time = time.time()
     
     async def think(self, task: str, context: str = "") -> str:
         """Agent thinking process"""
+        await self.rate_limit()
+        
         system_prompt = f"""
         You are a {self.role} at NASA with expertise in {self.specialization}.
         You work collaboratively with other NASA engineers on space missions and spacecraft design.
@@ -36,18 +75,24 @@ class NASAAgent:
         Context from other team members: {context}
         """
         
-        response = await self.client.chat.completions.create(
-            model=self.model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": task}
-            ],
-            max_tokens=1000
-        )
-        
-        result = response.choices[0].message.content
-        self.conversation_history.append({"task": task, "response": result})
-        return result
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": task}
+                ],
+                max_tokens=1000,
+                temperature=0.1
+            )
+            
+            result = response.choices[0].message.content
+            self.conversation_history.append({"task": task, "response": result})
+            return result
+        except Exception as e:
+            error_msg = f"Error in {self.role} analysis: {str(e)}"
+            self.conversation_history.append({"task": task, "response": error_msg})
+            return error_msg
 
 class NASASystemsEngineer(NASAAgent):
     def __init__(self):
@@ -333,6 +378,6 @@ if __name__ == "__main__":
     demo.launch(
         server_name="0.0.0.0",
         server_port=7861,
-        share=True,
+        share=False,  # Local-only access
         inbrowser=True
     )

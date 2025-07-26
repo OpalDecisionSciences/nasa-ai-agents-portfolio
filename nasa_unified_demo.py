@@ -504,7 +504,7 @@ def create_nasa_portfolio():
                         """)
                 
                 research_output = gr.Markdown(label="Research Report", container=True)
-                research_btn.click(portfolio.run_deep_research, research_query, research_output)
+                research_btn.click(fn=portfolio.run_deep_research, inputs=research_query, outputs=research_output)
             
             # Tab 2: Engineering Team
             with gr.TabItem("🤝 Engineering Team", id="engineering"):
@@ -539,7 +539,7 @@ def create_nasa_portfolio():
                         """)
                 
                 engineering_output = gr.Markdown(label="Engineering Design Session", container=True)
-                engineering_btn.click(portfolio.run_engineering_team, project_input, engineering_output)
+                engineering_btn.click(fn=portfolio.run_engineering_team, inputs=project_input, outputs=engineering_output)
             
             # Tab 3: Mission Control
             with gr.TabItem("🎮 Mission Control", id="control"):
@@ -588,7 +588,7 @@ def create_nasa_portfolio():
                         """)
                 
                 control_output = gr.Markdown(label="Mission Control Response", container=True)
-                control_btn.click(portfolio.run_mission_control, [control_scenario, mission_phase], control_output)
+                control_btn.click(fn=portfolio.run_mission_control, inputs=[control_scenario, mission_phase], outputs=control_output)
             
             # Tab 4: Spacecraft Autonomy
             with gr.TabItem("🤖 Spacecraft Autonomy", id="autonomy"):
@@ -632,7 +632,7 @@ def create_nasa_portfolio():
                         """)
                 
                 autonomy_output = gr.Markdown(label="Autonomy Response", container=True)
-                autonomy_btn.click(portfolio.run_spacecraft_autonomy, [autonomy_situation, autonomy_scenario], autonomy_output)
+                autonomy_btn.click(fn=portfolio.run_spacecraft_autonomy, inputs=[autonomy_situation, autonomy_scenario], outputs=autonomy_output)
             
             # Tab 5: Satellite Traffic Management
             with gr.TabItem("🛰️ Satellite Traffic", id="traffic"):
@@ -676,7 +676,7 @@ def create_nasa_portfolio():
                         """)
                 
                 traffic_output = gr.Markdown(label="Traffic Management Response", container=True)
-                traffic_btn.click(portfolio.run_satellite_traffic, [traffic_scenario, orbital_zone], traffic_output)
+                traffic_btn.click(fn=portfolio.run_satellite_traffic, inputs=[traffic_scenario, orbital_zone], outputs=traffic_output)
             
             # Tab 6: Planetary Exploration
             with gr.TabItem("🌍 Planetary Exploration", id="exploration"):
@@ -725,7 +725,7 @@ def create_nasa_portfolio():
                         """)
                 
                 exploration_output = gr.Markdown(label="Exploration Mission", container=True)
-                exploration_btn.click(portfolio.run_planetary_exploration, [planet_body, exploration_region, exploration_objectives], exploration_output)
+                exploration_btn.click(fn=portfolio.run_planetary_exploration, inputs=[planet_body, exploration_region, exploration_objectives], outputs=exploration_output)
         
         # Footer
         gr.HTML("""
@@ -758,6 +758,6 @@ if __name__ == "__main__":
     demo.launch(
         server_name="0.0.0.0",
         server_port=7860,
-        share=True,
+        share=False,  # Local-only access for security and reliability
         inbrowser=True
     )
