@@ -58,7 +58,12 @@ class NASAUnifiedPortfolio:
         self.client = openai.AsyncOpenAI(**client_kwargs)
         self.model = os.getenv("OPENAI_MODEL", "gpt-4o")
         self.last_request_time = 0
-        self.min_request_interval = 10.0  # 10 seconds between requests to respect GPT-4o TPM limits
+        self.min_request_interval = 15.0  # Conservative 15 seconds
+        
+        # Novel: Token Budget Management System
+        self.session_token_budget = 5000  # Conservative session budget
+        self.tokens_used = 0
+        self.response_cache = {}  # Cache to avoid repeat calls
     
     async def rate_limit(self):
         """Rate limiting to prevent API overload"""
@@ -92,84 +97,109 @@ class NASAUnifiedPortfolio:
                     full_response += content
                     yield content  # Stream chunks in real-time
             
-            return full_response
-            
         except openai.RateLimitError as e:
             yield f"⚠️ **Rate Limit**: GPT-4o TPM/RPM limit hit. Please wait 60 seconds."
         except Exception as e:
             yield f"API processing error: {str(e)}"
     
-    async def safe_api_call(self, prompt: str, max_tokens: int = 800):
-        """Non-streaming API call for simple responses"""
+    def estimate_tokens(self, text: str) -> int:
+        """Rough token estimation (1 token ≈ 4 characters)"""
+        return len(text) // 4
+    
+    def check_token_budget(self, requested_tokens: int) -> bool:
+        """Check if we have enough tokens in budget"""
+        return (self.tokens_used + requested_tokens) <= self.session_token_budget
+    
+    async def micro_response(self, prompt: str, max_tokens: int = 150):
+        """Novel: Ultra-small initial response to avoid rate limits"""
         await self.rate_limit()
         
+        # Check cache first
+        cache_key = f"{prompt[:50]}_{max_tokens}"
+        if cache_key in self.response_cache:
+            return self.response_cache[cache_key]
+        
+        # Check token budget
+        if not self.check_token_budget(max_tokens):
+            return f"⚠️ **Token Budget Exceeded**: Used {self.tokens_used}/{self.session_token_budget} tokens. Please refresh to reset."
+        
         try:
+            # Ultra-conservative micro-response
+            micro_prompt = f"In 2-3 sentences, briefly summarize: {prompt}"
+            
             response = await self.client.chat.completions.create(
                 model=self.model,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=max_tokens,
+                messages=[{"role": "user", "content": micro_prompt}],
+                max_tokens=max_tokens,  # Very small
                 temperature=0.1,
             )
-            return response.choices[0].message.content
+            
+            content = response.choices[0].message.content
+            
+            # Update token usage
+            tokens_used = self.estimate_tokens(prompt + content)
+            self.tokens_used += tokens_used
+            
+            # Cache the response
+            self.response_cache[cache_key] = content
+            
+            return content
             
         except openai.RateLimitError as e:
-            return f"⚠️ **Rate Limit**: GPT-4o TPM/RPM limit hit. Please wait 60 seconds."
+            return f"⚠️ **Rate Limit**: Please wait 60 seconds. Try smaller requests."
         except Exception as e:
-            return f"API processing error: {str(e)}"
+            return f"API error: {str(e)}"
+    
+    async def safe_api_call(self, prompt: str, max_tokens: int = 300):
+        """Conservative API call with budget management"""
+        return await self.micro_response(prompt, max_tokens)
     
     # DEEP RESEARCH AGENT FUNCTIONS
     async def run_deep_research(self, query: str):
-        """Deep Research Agent - Simplified for unified interface"""
+        """Novel Progressive Deep Research Agent"""
         try:
             if not query.strip():
                 return "Please enter a research query."
             
-            # Build complete response
-            result = f"🚀 **NASA Deep Research Agent Activated**\n\n"
-            result += f"**Research Query:** {query}\n\n"
+            # Progressive Response Header with Token Budget
+            result = f"🚀 **NASA Deep Research Agent - Progressive Mode**\n\n"
+            result += f"**Query:** {query}\n"
+            result += f"**Token Budget:** {self.session_token_budget - self.tokens_used}/{self.session_token_budget} remaining\n\n"
             
-            # Domain analysis
-            result += "🔍 **Analyzing research domain...**\n"
-            domains = {
-                "mission_planning": "Space mission design and architecture",
-                "propulsion": "Rocket engines and spacecraft propulsion",
-                "materials": "Space-grade materials and composites",
-                "life_support": "Environmental control and crew safety",
-                "exploration": "Planetary exploration and scientific instruments"
-            }
+            # PHASE 1: Micro-Summary (Ultra-Conservative)
+            result += "## 🔍 **Quick Research Summary** (Phase 1)\n\n"
             
-            domain = "exploration"  # Simplified for demo
-            result += f"**Domain:** {domains[domain]}\n\n"
+            micro_prompt = f"As a NASA researcher, provide a 2-sentence summary of key points about: {query}"
+            micro_response = await self.micro_response(micro_prompt, max_tokens=100)
             
-            # Single comprehensive research call (BATCHED approach)
-            result += "📊 **Conducting NASA-level research analysis...**\n\n"
+            result += micro_response + "\n\n"
             
-            # BATCHED PROMPT: Combine all research steps into one efficient call
-            batched_prompt = f"""
-            As a NASA research specialist, provide comprehensive analysis of: {query}
+            # Progressive Options for User
+            result += "---\n"
+            result += "**💡 Need More Detail?** Try these approaches:\n\n"
+            result += "1. **Shorter Query**: Ask about one specific aspect\n"
+            result += "2. **Multiple Sessions**: Break your research into parts\n"
+            result += "3. **Focused Questions**: Ask \"What are current NASA Mars missions?\" instead of broad topics\n\n"
             
-            Please structure your response with these sections:
+            # Show remaining budget
+            result += f"**Token Usage Update:** {self.tokens_used}/{self.session_token_budget} used\n\n"
             
-            1. **Domain Classification**: Identify the NASA research domain (mission planning, propulsion, materials, life support, exploration, communications)
+            # Optional: Domain classification (if budget allows)
+            if self.check_token_budget(50):
+                result += "## 🎯 **Research Domain**\n\n"
+                domain_prompt = f"What NASA research domain does this belong to: {query}?"
+                domain_response = await self.micro_response(domain_prompt, max_tokens=50)
+                result += domain_response + "\n\n"
+            else:
+                result += "## ⚠️ **Budget Limited**\n\nTo get domain classification, refresh the page to reset your token budget.\n\n"
             
-            2. **Current NASA Programs**: List relevant current NASA missions and programs
-            
-            3. **Technical Analysis**: Cover:
-               - Technical challenges and solutions
-               - Recent developments and innovations
-               - Safety and reliability considerations
-            
-            4. **Future Implications**: Space exploration impact and recommendations
-            
-            5. **Research Summary**: Key findings and next steps
-            
-            Format as a professional NASA research brief. Keep each section concise but comprehensive.
-            """
-            
-            response_content = await self.safe_api_call(batched_prompt, max_tokens=1000)
-            
-            result += "✅ **Research Analysis Complete**\n\n"
-            result += response_content
+            # Strategic guidance
+            result += "---\n"
+            result += "**🚀 Pro Tips for Better Results:**\n"
+            result += "- Use specific NASA mission names\n"
+            result += "- Ask about one technology at a time\n"
+            result += "- Try: 'Current status of Artemis program'\n"
+            result += "- Try: 'Mars rover power systems'\n\n"
             
             return result
             
@@ -258,7 +288,10 @@ class NASAUnifiedPortfolio:
             Use NASA mission control protocols.
             """
             
-            response_content = await self.safe_api_call(mc_prompt, max_tokens=600)
+            # Progressive approach for Mission Control
+            result += f"**Token Budget:** {self.session_token_budget - self.tokens_used}/{self.session_token_budget} remaining\n\n"
+            
+            response_content = await self.safe_api_call(mc_prompt, max_tokens=200)  # Ultra-conservative
             
             result += "## 📡 **Mission Control Team Response**\n\n"
             result += response_content + "\n\n"
