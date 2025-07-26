@@ -56,9 +56,9 @@ class NASAUnifiedPortfolio:
             client_kwargs["organization"] = org_id
             
         self.client = openai.AsyncOpenAI(**client_kwargs)
-        self.model = os.getenv("OPENAI_MODEL", "gpt-4o")
+        self.model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")  # Switch to mini for testing
         self.last_request_time = 0
-        self.min_request_interval = 15.0  # Conservative 15 seconds
+        self.min_request_interval = 30.0  # Very conservative 30 seconds for testing
         
         # Novel: Token Budget Management System
         self.session_token_budget = 5000  # Conservative session budget
@@ -110,13 +110,18 @@ class NASAUnifiedPortfolio:
         """Check if we have enough tokens in budget"""
         return (self.tokens_used + requested_tokens) <= self.session_token_budget
     
-    async def micro_response(self, prompt: str, max_tokens: int = 150):
+    async def micro_response(self, prompt: str, max_tokens: int = 50):  # Even smaller!
         """Novel: Ultra-small initial response to avoid rate limits"""
+        
+        # Diagnostic info
+        print(f"🔍 DEBUG: Making request with {max_tokens} tokens, {self.min_request_interval}s interval")
+        
         await self.rate_limit()
         
         # Check cache first
         cache_key = f"{prompt[:50]}_{max_tokens}"
         if cache_key in self.response_cache:
+            print("✅ DEBUG: Using cached response")
             return self.response_cache[cache_key]
         
         # Check token budget
@@ -125,7 +130,9 @@ class NASAUnifiedPortfolio:
         
         try:
             # Ultra-conservative micro-response
-            micro_prompt = f"In 2-3 sentences, briefly summarize: {prompt}"
+            micro_prompt = f"Briefly: {prompt[:100]}"  # Even shorter prompt
+            
+            print(f"🚀 DEBUG: Sending request to {self.model}")
             
             response = await self.client.chat.completions.create(
                 model=self.model,
@@ -135,6 +142,7 @@ class NASAUnifiedPortfolio:
             )
             
             content = response.choices[0].message.content
+            print(f"✅ DEBUG: Got response: {len(content)} chars")
             
             # Update token usage
             tokens_used = self.estimate_tokens(prompt + content)
@@ -146,8 +154,10 @@ class NASAUnifiedPortfolio:
             return content
             
         except openai.RateLimitError as e:
-            return f"⚠️ **Rate Limit**: Please wait 60 seconds. Try smaller requests."
+            print(f"❌ DEBUG: Rate limit error: {str(e)}")
+            return f"⚠️ **Rate Limit**: {str(e)}"
         except Exception as e:
+            print(f"❌ DEBUG: Other error: {str(e)}")
             return f"API error: {str(e)}"
     
     async def safe_api_call(self, prompt: str, max_tokens: int = 300):
