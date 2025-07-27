@@ -56,7 +56,7 @@ class NASAUnifiedPortfolio:
             client_kwargs["organization"] = org_id
             
         self.client = openai.AsyncOpenAI(**client_kwargs)
-        self.model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")  # Switch to mini for testing
+        self.model = os.getenv("OPENAI_MODEL", "gpt-3.5-turbo")  # Try free tier model
         self.last_request_time = 0
         self.min_request_interval = 30.0  # Very conservative 30 seconds for testing
         
